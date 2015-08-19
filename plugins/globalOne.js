@@ -1,0 +1,4 @@
+Carpenter.registerPlugin('globalOne', [], function() {
+	
+
+});

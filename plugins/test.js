@@ -1,0 +1,3 @@
+Carpenter.registerPlugin('test', [], function() {
+	
+});
