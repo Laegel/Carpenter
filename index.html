@@ -2,10 +2,9 @@
 <html>
     <head>
         <title>Carpenter</title>
-        <link rel="stylesheet" type="text/css" href="animate.css">
     </head>
     <body>
-    	<div id="test"><span class="test-span" data-test="blu">Say hi </span><span class="another-one"><em>Say nope</em><i>Lolz</i></span></div>
+    	<div id="test"><span class="test-span" data-test="blu">Data test</span><span class="another-one"><em>Another test</em><i>Italic</i></span></div>
     	<div id="test2" style="background: green"></div>
         <div class="testUnique">
             <span class="1">11</span>
@@ -16,13 +15,22 @@
             <span class="2">22</span>
         </div>
         
-        <div id="container"></div>
+        <div id="log">
+            Log
+        </div>
         
         <script type="text/javascript">
-            function log(string) {
-                console.log(string);
-            }
-            console.time('Carpenter');
+            log = console.log;
+            function microtime() {
+                get_as_float = true;
+                var now = new Date()
+                  .getTime() / 1000;
+                var s = parseInt(now, 10);
+
+                return (get_as_float) ? now : (Math.round((now - s) * 1000) / 1000) + ' ' + s;
+              }
+
+            console.time('Carpenter loading');
         </script>
         <script type="text/javascript" src="Carpenter.js"></script>
         <script type="text/javascript" src="bootstrap.js"></script>

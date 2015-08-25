@@ -1,10 +1,20 @@
-Carpenter.init(function() {
-    var pluginList = new PluginManager('globalOne', 'animate');
+/*global Carpenter, Router, PluginManager*/
+console.timeEnd('Carpenter loading');
+console.time('Carpenter execution');
 
-    Carpenter.app = new Application({
-        type: 'rewrite'
-    }, pluginList);
+Carpenter.init(function() {
     
-    Router.handle(Carpenter.app);
+    Carpenter.app = new Application({//Settings
+        type: 'rewrite'
+    }, {//Global classes
+        ManipulableElement: 'Element',
+        EventManager: 'Event'
+    },
+    new PluginManager(//Global plugins
+        'component'
+    ));
+    
+    Router.handle(Carpenter.app);//Launch !
 }, true);
-console.timeEnd('Carpenter');
+
+console.timeEnd('Carpenter execution');

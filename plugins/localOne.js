@@ -1,3 +1,0 @@
-Carpenter.registerPlugin('localOne', [], function() {
-	
-});

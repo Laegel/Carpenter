@@ -9,11 +9,59 @@ var Carpenter = {
         });
         return newArray;
     },
+    count: 0,
+    fetchDependencies: function(/*String*/path) {
+        var i = 0, xhrObj, newFile, promises = [], sources = Carpenter.Dependencies;
+        while(i < sources.length) {
+            promises[i] = new Promise(function(resolve, reject) {
+                xhrObj = new XMLHttpRequest();
+                xhrObj.onload = function() {
+                    if(200 === this.status) {
+                        resolve({
+                            extension: this.extension,
+                            content: this.responseText
+                        });
+                    } else {
+                        reject(this.statusText);
+                    }
+                };
+                xhrObj.extension = sources[i].split('.').pop();
+                xhrObj.open('GET', path + '/' + sources[i], true);
+                xhrObj.send();
+            });
+            ++i;
+        }
+        Promise.all(promises).then(function(files) {
+            files.forEach(function(file) {
+                switch(file.extension) {
+                    case 'css':
+                        newFile = document.createElement('style');
+                        newFile.type = 'text/css';
+                        newFile.textContent = file.content;
+                        break;
+                    case 'js':
+                        newFile = document.createElement('script');
+                        newFile.type = 'text/js';
+                        newFile.text = file.content;
+                        break;
+                    default:
+                        //log(files)
+                        break;
+                }
+                document.head.appendChild(newFile);
+            });
+
+        }).catch(function(status) {
+            throw new Error(status);
+        });
+
+
+    },
     getCookie: function(/*String*/index) {
         var name = index + '=', ca = document.cookie.split(';');
         for(var i = 0; i < ca.length; ++i) {
             var c = ca[i].trim();
-            if(c.indexOf(name) == 0)
+            if(0 === c.indexOf(name))
                 return c.substring(name.length, c.length);
         }
         return '';
@@ -30,52 +78,29 @@ var Carpenter = {
         return Object.getOwnPropertyNames(object).length === 0;
     },
     isElement: function(/*Object*/object) {
-        return object instanceof(Carpenter.Framework.Interact.Element.Element);
+        return object instanceof(Carpenter.Framework.Interact.Element.AbstractElement);
     },
-    isSet: function(/*Misc*/primitive) {
+    isSet: function(/*mixed*/primitive) {
         return undefined !== primitive;
     },
     init: function(/*Function*/callback, /*[Boolean]*/isDev) {
         Application = Carpenter.use('Application'), Router = Carpenter.use('Router'), PluginManager = Carpenter.use('PluginManager');
-        var classes = isDev ? ['Array', 'Date', 'Number', 'Object', 'String'] : ['classes'];
+        var classes = isDev ? ['Array', 'Date', 'HTMLElement', 'Number', 'String'] : ['classes'];
         classes.forEach(function(className) {
-            Carpenter.loadScript('classes/' + className + '.js');
+            Carpenter.require('classes/' + className + '.js');
         });
         callback();
-        var dependencies = Carpenter.Dependencies;
-        dependencies.forEach(function(path) {
-            Carpenter.loadScript('libs/' + path + '.js');//TODO allow CSS dependencies and set style tag
-        });
         delete Application;
         delete Router;
+        delete PluginManager;
     },
-    loadScript: function(/*String*/source) {
-        var script = document.createElement('script');
-        script.onerror = function() {
-            throw new Error('Script could not be loaded at "' + this.src + '"');
-        };
-        var xhrObj = new XMLHttpRequest();
-        xhrObj.open('GET', source, false);
-        xhrObj.send('');
-
-        script.type = 'text/javascript';
-        script.text = xhrObj.responseText;
-        document.getElementsByTagName('body')[0].appendChild(script);
-    },
-    makeSelector: function(/*HTMLElement*/node) {
-        var sameTag = Array.prototype.slice.call(document.getElementsByTagName(node.tagName)), i, match, siblingsSameTag = [];
-        for(i = 0; i < sameTag.length; ++i) {
-            if(sameTag[i].parentNode === node.parentNode)
-                siblingsSameTag.push(sameTag[i]);
-        }
-        for(i = 0; i < sameTag.length; ++i) {
-            if(siblingsSameTag[i] === node) {
-                match = i + 1;
-                break;
-            }
-        }
-        var targetString = node.tagName !== 'HTML' && node.tagName !== 'BODY' ? ':nth-child(' + match + ')' : targetString = '';
-        return node.parentNode.tagName !== undefined ? this.makeSelector(node.parentNode) + ' > ' + node.tagName.toLowerCase() + targetString : node.tagName.toLowerCase() + targetString;
+    merge: function(/*Object*/to, /*Object*/from) {
+        var out = {}, property;
+        for (property in to)
+            out[property] = to[property]; 
+        for (property in from)
+            out[property] = from[property]; 
+        return out;
     },
     parseHtml: function(/*String*/html) {
         var temp = document.implementation.createHTMLDocument();
@@ -102,6 +127,19 @@ var Carpenter = {
     registerRoute: function() {
 
     },
+    require: function(/*String*/source) {
+        var script = document.createElement('script');
+        script.onerror = function() {
+            throw new Error('Script could not be loaded at "' + this.src + '"');
+        };
+        var xhrObj = new XMLHttpRequest();
+        xhrObj.open('GET', source, false);
+        xhrObj.send('');
+
+        script.type = 'text/javascript';
+        script.text = xhrObj.responseText;
+        document.getElementsByTagName('body')[0].appendChild(script);
+    },
     size: function(/*Object*/object) {
         var size = 0, key;
         for(key in object)
@@ -127,14 +165,14 @@ var Carpenter = {
         var namespace = Carpenter.activeClasses[className].namespace,
                 subNamespace = Carpenter.activeClasses[className].subNamespace,
                 abstract = 'Abstract' + subNamespace,
-                proto = 'Prototype' + subNamespace;
+                proto = 'Prototype' + subNamespace, protoName, subClass;
         if(!Carpenter.isEmpty(Carpenter.Framework[namespace][subNamespace][className].prototype)) {
             var abstractClass = Carpenter.Framework[namespace][subNamespace][abstract];
             if(abstractClass) {
-                for(var protoName in Carpenter.Framework[namespace][subNamespace][proto]) {
-                    abstractClass.prototype[protoName] = Carpenter.Framework[namespace][subNamespace][proto][protoName]
+                for(protoName in Carpenter.Framework[namespace][subNamespace][proto]) {
+                    abstractClass.prototype[protoName] = Carpenter.Framework[namespace][subNamespace][proto][protoName];
                 }
-                for(var subClass in Carpenter.Framework[namespace][subNamespace]) {
+                for(subClass in Carpenter.Framework[namespace][subNamespace]) {
                     if(-1 === subClass.indexOf('Abstract') && -1 === subClass.indexOf('Prototype')) {
                         Carpenter.Framework[namespace][subNamespace][subClass].prototype = Object.create(abstractClass.prototype);
                     }
@@ -143,101 +181,14 @@ var Carpenter = {
         }
         return Carpenter.Framework[namespace][subNamespace][className];
     },
-    activeEvents: {},
-    Events: {
-        native: [
-            'abort', 'activate', 'blur', 'change', 'click', 'copy', 'cut', 'dblclick',
-            'drag', 'dragend', 'dragenter', 'dragleave', 'dragover', 'dragstart', 'drop',
-            'error', 'finish', 'focus', 'focusin', 'focusout', 'hashchange', 'help', 'hover',
-            'keydown', 'keypress', 'keyup', 'load', 'mousedown', 'mouseenter', 'mouseleave', 'mousemove',
-            'mouseout', 'mouseover', 'mouseup', 'offline', 'online', 'paste', 'resize', 'scroll',
-            'select', 'submit', 'touchcancel', 'touchend', 'touchenter', 'touchleave', 'touchmove', 'touchstart'
-        ],
-        custom: {
-            contentmodified: {
-                check: function() {
-                    return true;
-                },
-                init: function(callback) {
-                    Carpenter(this.element).on('DOMSubtreeModified', {event: this, callback: callback}, this.innerCallback);
-                },
-                remove: function() {
-                    Carpenter(this.element).off('DOMSubtreeModified', {event: this}, this.innerCallback);
-                },
-                innerCallback: function(event) {
-                    var Carpenterthis = event.data.event;
-                    var element = Carpenter(Carpenterthis.element);
-                    element[event.data.callback] = event.data.callback;
-                    element[event.data.callback](event);
-                }
-            },
-            clickout: {
-                check: function() {
-                    return true;
-                },
-                init: function(settings) {
-                    var innerCallback = this.innerCallback;
-                    document.addEventListener('click', (function(settings) {
-                        return function(e) {
-                            innerCallback(e, settings);
-                        };
-                    })(settings), true);
-                },
-                remove: function() {
-                    document.removeEventListener('click', this.innerCallback, true);
-                },
-                innerCallback: function(event, settings) {
-
-                    var element = settings.element, elementOffset = element.offset();
-                    if((event.pageX < elementOffset.left || event.pageX > elementOffset.left + element.outerWidth()) ||
-                            (event.pageY < elementOffset.top || event.pageY > elementOffset.top + element.outerHeight())) {
-                        element[settings.callback] = settings.callback;
-                        element[settings.callback](event);
-                    }
-                }
-            },
-            enter: {
-                check: function(event) {
-                    return event.keyCode === 13 && event.type === 'keypress';
-                }
-            },
-            escape: {
-                check: function(event) {
-                    return event.keyCode === 27 && event.type === 'keypress';
-                }
-            },
-            hovering: {
-                check: function(event) {
-                    return true;
-                }
-            },
-            lclick: {
-                check: function(event) {
-                    return event.which === 1 && event.type === 'mouseup';
-                }
-            },
-            mclick: {
-                check: function(event) {
-                    return event.which === 2 && event.type === 'mouseup';
-                }
-            },
-            rclick: {
-                check: function(event) {
-                    return event.which === 3 && event.type === 'mouseup';
-                }
-            },
-            swipe: {
-            }
-        }
-    },
     Dependencies: [],
     activeClasses: {
         Application: {namespace: 'Structure', subNamespace: 'Application'},
         Component: {namespace: 'Structure', subNamespace: 'Component'},
         Encryption: {namespace: 'Security', subNamespace: 'Encryption'},
         EventManager: {namespace: 'Interact', subNamespace: 'Event'},
-        Element: {namespace: 'Interact', subNamespace: 'Element'},
-        Module: {namespace: 'Structure', subNamespace: 'Module'},
+        ManipulableElement: {namespace: 'Interact', subNamespace: 'Element'},
+        Controller: {namespace: 'Structure', subNamespace: 'Controller'},
         PluginManager: {namespace: 'Interact', subNamespace: 'Plugin'},
         Poller: {namespace: 'Http', subNamespace: 'Request'},
         Request: {namespace: 'Http', subNamespace: 'Request'},
@@ -246,20 +197,43 @@ var Carpenter = {
         Simple: {namespace: 'Http', subNamespace: 'Request'},
         Skin: {namespace: 'Template', subNamespace: 'Skin'},
         Validation: {namespace: 'Security', subNamespace: 'Validation'},
+        VirtualElement: {namespace: 'Interact', subNamespace: 'Element'},
         WebService: {namespace: 'Http', subNamespace: 'Request'}
     },
     Framework: {
-        Interact: {//Namespace Interact
+        //Namespace Data
+        Data: {/*TODO*/
+            //Namespace Data\Format
+            Format: {
+                //Dates, monnaies, traductions, etc
+            },
+            //Namespace Data\Model
+            Model: {
+                //Abstract class Data\Model\AbstractModel
+                AbstractModel: function() {
+
+                },
+                //Data\Model\AbstractModel methods
+                PrototypeModel: {
+                },
+                //Class Data\Model\Model
+                Model: function() {
+
+                }
+            }
+        },
+        //Namespace Interact
+        Interact: {
+            //Namespace Interact\Element
             Element: {
-                AbstractElement: function(/*String*/selector, /*[Boolean]*/makeNew) {
-                    //Protected
-                    var protected = {pointer: 0, selector: selector, tags: [], tiedEvents: []};//remettre selector & tags
-                    if(makeNew) {/*UTILISER SKIN OU AUTRE MOTEUR DE TEMPLATE*/ //TODO
-                        protected.tags = [document.createElement(selector)];
-                    } else {
-                        protected.tags = Carpenter.Framework.Interact.Element.getTags(selector);
-                        //this.tags = protected.tags;
-                    }
+                //Abstract class Interact\Element\AbstractElement
+                AbstractElement: function(/*String*/selector) {
+                    var protected = {//Protected
+                        pointer: 0,
+                        selector: selector,
+                        tags: Carpenter.Framework.Interact.Element.getTags(selector),
+                        tiedEvents: []
+                    };
 
                     this.setPointer = function(/*Integer*/index) {
                         protected.pointer = index;
@@ -267,6 +241,8 @@ var Carpenter = {
                     };
 
                     this.getTags = function() {
+                        if(0 === protected.tags.length)
+                            throw new Error('No matching tags with "' + protected.selector + '".');
                         return protected.tags;
                     };
 
@@ -277,33 +253,10 @@ var Carpenter = {
                     this.getSelector = function() {
                         return protected.selector;
                     };
-
-                    this.addTiedEvent = function(event) {//TODO
-                        if(!protected.tiedEvents[protected.pointer]) {
-                            protected.tiedEvents[protected.pointer] = [event];
-                        } else
-                            protected.tiedEvents[protected.pointer].push(event);
-                        return this;
-                    };
-
-                    this.removeTiedEvent = function(event) {
-                        if(protected.tiedEvents[protected.pointer]) {
-                            protected.tiedEvents[protected.pointer].forEach(function(element, key, value) {
-                                if(event === element) {
-                                    delete protected.tiedEvents[protected.pointer][i];
-                                    return this;
-                                }
-                            });
-                        }
-                        return this;
-                    };
-
-                    this.getTiedEvents = function() {
-                        return protected.tiedEvents[protected.pointer] ? protected.tiedEvents[protected.pointer] : [];
-                    };
-                    //this.selector = selector;
+                    
                     this.length = protected.tags.length;
                 },
+                //Interact\Element\AbstractElement methods
                 PrototypeElement: {
                     addClass: function(/*String*/className) {
                         this.getTag().classList.add(className);
@@ -317,8 +270,10 @@ var Carpenter = {
                             throw new Error('Argument is not an instance of Element.');
                         return this;
                     },
-                    children: function() {
-                        return new Carpenter.Framework.Interact.Element.Element(Carpenter.makeSelector(this.getTag()) + ' > *');
+                    children: function(/*[String]*/selector) {
+                        if(!Carpenter.isSet(selector))
+                            selector = '*';
+                        return new Carpenter.Framework.Interact.Element.Element(this.getTag().rootPath() + ' > ' + selector);
                     },
                     contains: function(/*Element*/element) {
                         if(Carpenter.isElement(element)) {
@@ -328,12 +283,12 @@ var Carpenter = {
                         return false;
                     },
                     forEach: function(/*Function*/callback) {
-                        var i, length = this.length, thus = this;
+                        var thus = this, pointer = this.getPointer();
                         this.getTags().forEach(function(tag, key, value) {
                             thus.setPointer(key);
                             callback.apply(thus);
                         });
-                        return this;
+                        return this.setPointer(pointer);
                     },
                     getAttributes: function(/*[String|Array]*/conditionName, /*[String|Array]*/conditionValue, /*[Boolean]*/exclude) {
                         var attributes = {}, i, tag = this.getTag();
@@ -399,14 +354,14 @@ var Carpenter = {
                     },
                     getOuterHtml: function() {
                         var tag = this.getTag();
-                        return (!this.length) ? '' : (tag.outerHTML || (
+                        return tag.outerHTML || (
                                 function(element) {
                                     var div = document.createElement('div');
                                     div.appendChild(element.cloneNode(true));
                                     var contents = div.innerHTML;
                                     div = null;
                                     return contents;
-                                })(tag));
+                                })(tag);
                     },
                     getStyle: function(/*String*/ruleName) {
                         return getComputedStyle(this.getTag())[ruleName];
@@ -418,6 +373,9 @@ var Carpenter = {
                     getText: function() {
                         return this.getTag().textContent;
                     },
+                    getValue: function() {
+                        return this.getTag().value;
+                    },
                     hasAttribute: function(/*String*/name) {
                         var attribute = this.getTag().getAttribute(name);
                         return attribute !== undefined && attribute !== false;
@@ -427,7 +385,7 @@ var Carpenter = {
                     },
                     indexOf: function(/*Element*/element) {
                         if(Carpenter.isElement(element)) {
-                            var i;
+                            var i, currentTag = this.getTag();
                             for(i = 0; i < this.length; ++i) {
                                 if(currentTag === element.tags[i])
                                     return i;
@@ -466,7 +424,7 @@ var Carpenter = {
                         return width;
                     },
                     parent: function() {
-                        return new Carpenter.Framework.Interact.Element.Element(Carpenter.makeSelector(this.getTag().parentNode));
+                        return new Carpenter.Framework.Interact.Element.Element(this.getTag().parentNode.rootPath());
                     },
                     position: function() {
                         var tag = this.getTag();
@@ -498,6 +456,11 @@ var Carpenter = {
                         tag.parentNode.removeChild(tag);
                         this.refresh();
                     },
+                    removeAttribute: function(/*String*/attributeName) {
+                        var tag = this.getTag();
+                        tag.removeAttribute(attributeName);
+                        return this;
+                    },
                     removeClass: function(/*String*/className) {
                         this.getTag().classList.remove(className);
                         return this;
@@ -527,99 +490,15 @@ var Carpenter = {
                         this.getTag().textContent = string || '';
                         return this;
                     },
+                    setValue: function(/*String*/string) {
+                        this.getTag().value = string || '';
+                        return this;
+                    },
                     siblings: function() {
                         var element = this.getTag();
                         return Array.prototype.filter.call(element.parentNode.children, function(child) {
                             return child !== element;
                         });
-                    },
-                    /*
-                     Améliorations à prévoir : tie et untie sur n éléments
-                     Si un event avec un sélecteur concerne deux éléments et que l'un d'eux se voit "untie", l'event existe toujours
-                     Si un event n'a plus d'éléments, il doit être supprimé
-                     */
-                    tie: function(/*EventManager*/eventObject, /*[Object]*/data, /*[Boolean]*/triggerOnce) {
-                        var selector = this.selector === '' ? this.selector = this.getFromRoot() : this.selector,
-                                splittedEvents = eventObject.list, countEvents = splittedEvents.length, i, exists, index;
-
-                        if(!Carpenter.activeEvents[selector]) //If events data are set
-                            Carpenter.activeEvents[selector] = [];
-
-                        for(i = 0; i < countEvents; ++i) {
-
-                            exists = false;
-                            if(Carpenter.activeEvents[selector].length > 0) {
-                                for(index in Carpenter.activeEvents[selector]) {
-                                    if(splittedEvents[i] === Carpenter.activeEvents[selector][index].type && '' + Carpenter.activeEvents[selector][index].handler === '' + callback) {
-                                        exists = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            if(!exists)
-                                Carpenter.activeEvents[selector].push({
-                                    type: splittedEvents[i],
-                                    handler: eventObject.callback,
-                                    initialized: false
-                                });
-                        }
-                        if(Carpenter.activeEvents[selector].length - countEvents === 0 && !exists) {
-                            function triggerCallback(event, element, callback) {
-                                for(i = 0; i < element.length; ++i)
-                                    if(element.tags[i].contains(event.target)) {
-                                        element.pointer = i;
-                                        break;
-                                    }
-                                element[callback] = callback;
-                                element[callback](event, data);
-                                if(triggerOnce)
-                                    element.untie(eventObject)
-                            }
-                            var eventTrick = ['blur', 'change', 'click', 'dblclick', 'error', 'focus', 'focusin', 'focusout',
-                                'hover', 'keydown', 'keypress', 'keyup', 'load', 'mousedown', 'mouseenter', 'mouseleave',
-                                'mousemove', 'mouseout', 'mouseover', 'mouseup', 'resize', 'scroll', 'select', 'submit'],
-                                    customEvents = Carpenter.Events.custom, nativeEvents = Carpenter.Events.native, i, j, k;
-                            this.forEach(function() {
-                                var thus = this, activeEvents = Carpenter.activeEvents[thus.selector];
-
-                                eventTrick.forEach(function(eventName) {
-                                    thus.tags[thus.pointer].addEventListener(
-                                            eventName,
-                                            function(event) {
-                                                for(j = 0; j < activeEvents.length; ++j) {
-                                                    if(customEvents[activeEvents[j].type] && !activeEvents[j].initialized) {
-                                                        if(typeof customEvents[activeEvents[j].type].init === 'function' && typeof customEvents[activeEvents[j].type].innerCallback !== 'function')
-                                                            customEvents[activeEvents[j].type].init({callback: activeEvents[j].handler, element: thus, event: event});
-                                                        else if(typeof customEvents[activeEvents[j].type].init === 'function' && typeof customEvents[activeEvents[j].type].innerCallback === 'function')
-                                                            customEvents[activeEvents[j].type].init({callback: activeEvents[j].handler, element: thus, event: event});
-                                                        activeEvents[j].initialized = true;
-                                                    }
-                                                    if(customEvents[activeEvents[j].type] && customEvents[activeEvents[j].type].check(event) && !customEvents[activeEvents[j].type].innerCallback) {
-                                                        triggerCallback(event, thus, activeEvents[j].handler);
-                                                        return;
-                                                    }
-                                                }
-                                                if(nativeEvents.contains(event.type)) {
-                                                    for(k = 0; k < activeEvents.length; ++k) {
-                                                        if(activeEvents[k].type === event.type) {
-                                                            triggerCallback(event, thus, activeEvents[k].handler);
-                                                            return;
-                                                        }
-                                                    }
-                                                }
-
-                                            }, //callback
-                                            false
-                                            );//addEventListener
-
-                                });
-                            });
-                        }
-                        if(Carpenter.activeEvents[selector].indexOf('clickout') === -1)//Simple trick to init all events except clickout
-                            this.forEach(function() {
-                                this.tags[this.pointer].dispatchEvent(new Event('blur'));
-                            });
-                        return this;
                     },
                     to: function(/*Integer*/index) {//setPointer alias
                         this.setPointer(index);
@@ -628,45 +507,43 @@ var Carpenter = {
                     toggleClass: function(/*String*/className) {
                         this.getTag().classList.toggle(className);
                         return this;
-                    },
-                    untie: function(/*Event*/event) {
-                        var selector = this.selector === '' ? this.selector = this.getFromRoot() : this.selector,
-                                splittedEvents = event.list, countEvents = splittedEvents.length, i, exists, index,
-                                eventTrick = ['blur', 'change', 'click', 'dblclick', 'error', 'focus', 'focusin', 'focusout',
-                                    'hover', 'keydown', 'keypress', 'keyup', 'load', 'mousedown', 'mouseenter', 'mouseleave',
-                                    'mousemove', 'mouseout', 'mouseover', 'mouseup', 'resize', 'scroll', 'select', 'submit'];
-
-                        if(!event) {//If no arguments are passed, it will remove all events bound to the element
-                            this.forEach(function() {
-                                var thus = this;
-                                eventTrick.forEach(function(eventName) {
-                                    thus.tags[thus.pointer].addEventListener(eventName);
-                                });
-                            });
-                            delete Carpenter.activeEvents[selector];
-                        } else {
-                            var splittedEvents = event.list,
-                                    countEvents = splittedEvents.length,
-                                    customEvents = Carpenter.Events.custom, nativeEvents = Carpenter.Events.native, activeEvents = Carpenter.activeEvents[this.selector];
-                            if(activeEvents) { //If events data are set
-                                for(i = 0; i < countEvents; ++i) {
-                                    for(index in activeEvents) {
-                                        if(splittedEvents[i] === activeEvents[index].type && '' + activeEvents[index].handler === '' + event.callback) {
-                                            activeEvents.splice(index, 1);
-                                            if(customEvents[splittedEvents[i]] && customEvents[splittedEvents[i]].remove === 'function')
-                                                customEvents[splittedEvents[i]].remove();
-                                        } else if(!event.callback)
-                                            activeEvents = {};
-                                    }
-                                }
-                            }
-                        }
-                        return this;
                     }
                 },
-                Element: function(/*String*/selector, /*[Boolean]*/makeNew) {
+                //Class Interact\Element\ManipulableElement
+                ManipulableElement: function(/*String*/selector) {
                     Carpenter.Framework.Interact.Element.AbstractElement.apply(this, arguments);
                 },
+                //Class Interact\Element\VirtualElement
+                VirtualElement: function(/*String*/tag, /*[Object]*/attributes) {
+                    this.prototype = Carpenter.Framework.Interact.Element.AbstractElement.prototype;
+
+                    var node = document.createElement(tag), attribute, reserved = {text: 'textContent', html: 'innerHTML', style: 'style', attributes: 'attributes'};
+                    for(attribute in attributes) {
+                        if(attribute in reserved)
+                            node[reserved[attribute]] = attributes[attribute];
+                        else
+                            node.setAttribute(attribute, attributes[attribute]);
+                    }
+                    node.setAttribute('cpt-id', ++Carpenter.count);
+                    var protected = {tags: [node], pointer: 0, selector: tag + '[cpt-id="' + Carpenter.count + '"]'};
+
+                    this.getTags = function() {
+                        return protected.tags;
+                    };
+
+                    this.getPointer = function() {
+                        return protected.pointer;
+                    };
+
+                    this.getSelector = function() {
+                        return protected.selector;
+                    };
+
+                    this.refresh = function() {
+                        return false;
+                    };
+                },
+                //Static method getTags
                 getTags: function(selector) {
                     function getById(selector) {
                         var element = document.getElementById(selector.replace('#', ''));
@@ -686,11 +563,14 @@ var Carpenter = {
                     return getById(selector) || getByClass(selector) || getByTag(selector) || getOther(selector);
                 }
             },
-            Event: {//Namespace Interact\Event
-                AbstractEvent: function(/*Array*/eventNames, /*Function*/callback) {//Class Interact\Event\AbstractEvent
+            //Namespace Interact\Event
+            Event: {
+                //Abstract class Interact\Event\AbstractEvent
+                AbstractEvent: function(/*Array*/eventNames, /*Function*/callback) {
                     this.list = eventNames;
                     this.callback = callback;
                 },
+                //Interact\Event\AbstractEvent methods
                 PrototypeEvent: {//Prototypes for Interact\Event\AbstractEvent
                     isNative: function(/*String*/eventName) {
                         return Carpenter.Events.native.indexOf(eventName) > -1;
@@ -699,71 +579,70 @@ var Carpenter = {
                         return Carpenter.Events.custom.indexOf(eventName) > -1;
                     }
                 },
+                //Class Interact\Event\EventManager
                 EventManager: function(/*Array*/eventNames, /*Function*/callback) {
                     Carpenter.Framework.Interact.Event.AbstractEvent.apply(this, arguments);
                 }
             },
+            //Namespace Interact\Plugin
             Plugin: {
-                AbstractPlugin: function() {
+                //Abstract class Interact\Plugin\AbstractPlugin
+                AbstractPlugin: function(/*List of strings*/) {
                     this.list = Array.prototype.slice.call(arguments);
-                    ;
                 },
+                //Interact\Plugin\AbstractPlugin methods
                 PrototypePlugin: {
-                    load: function() {
+                    load: function(/*String*/path) {
                         var script, i;
                         this.list.forEach(function(source) {
                             if(!Carpenter.Framework.Interact.Element.PrototypeElement[source]) {
-                                Carpenter.loadScript('plugins/' + source + '.js');
+                                Carpenter.require(path + '/' + source + '.js');//Combine loaders (global plugins + dependencies)
                             }
                         });
-
-                        /*for(i = 0; i < this.list.length; ++i) {
-                         script = document.createElement('script');
-                         script.async = false;
-                         script.onerror = function() {
-                         throw('Script could not be loaded at "' + this.src + '"');
-                         };
-                         script.type = 'text/javascript';
-                         script.src = 'plugins/' + this.list[i] + '.js';
-                         document.getElementsByTagName('body')[0].appendChild(script);
-                         }*/
                     }
                 },
-                PluginManager: function() {
+                //Class Interact\Plugin\PluginManager
+                PluginManager: function(/*List of strings*/) {
                     Carpenter.Framework.Interact.Plugin.AbstractPlugin.apply(this, arguments);
                 }
             }
         },
-        Http: {//Namespace Http
+        //Namespace Http
+        Http: {
+            //Namespace Http\RequestSettings
             RequestSettings: {
-                RequestSettings: {
-                    create: function(/*Object*/params) {
-                        var url = params.url || '', method = params.method || 'GET',
-                                onSuccess = params.onSuccess || null, onFailure = params.onFailure || null,
-                                onTimeout = params.onTimeout || null, data = params.data || '';
-                        return {url: url, method: method, onSuccess: onSuccess, onFailure: onFailure, onTimeout: onTimeout, data: data};
-                    }
-                }
+                create: function(/*Object*/params) {
+                    var url = params.url || '', method = params.method || 'GET',
+                        onSuccess = params.onSuccess || null, onFailure = params.onFailure || null,
+                        onTimeout = params.onTimeout || null, data = params.data || '';
+                    return {
+                        url: url, method: method, onSuccess: onSuccess, 
+                        onFailure: onFailure, onTimeout: onTimeout, data: data
+                    };
+                 }
             },
-            Request: {//Namespace Http\Request //TODO
-                AbstractRequest: function(/*Settings*/params) {//Class Http\Request\AbstractRequest
+            //Namespace Http\Request 
+            Request: {
+                //Abstract class Http\Request\AbstractRequest
+                AbstractRequest: function(/*Settings*/params) {
                     //Protected
                     var protected = {request: new XMLHttpRequest(), settings: params};
-                    
+
                     //this.request = new XMLHttpRequest();
                     //this.settings = params;
-                    
+
                     protected.request.open(protected.settings.method, protected.settings.url, true);
-                    
+
                     this.getRequest = function() {
                         return protected.request;
                     };
-                    
+
                     this.getSettings = function() {
                         return protected.settings;
                     };
                 },
-                PrototypeRequest: {//Prototypes for Http\Request\AbstractRequest
+                //Http\Request\AbstractRequest methods
+                PrototypeRequest: {
                     abort: function() {
                         this.getRequest().abort();
                         return this;
@@ -780,18 +659,22 @@ var Carpenter = {
                         return this;
                     }
                 },
-                JSON: function(/*Settings*/params, /*[Object]*/paramsOverride) {//Class Http\Request\JSON
+                //Class Http\Request\JSON
+                JSON: function(/*Settings*/params, /*[Object]*/paramsOverride) {
                     //Retourne du JSON
                     Carpenter.Framework.Http.Request.AbstractRequest.call(this, params);
                 },
-                Poller: function(/*Settings*/params, /*[Object]*/paramsOverride) {//Class Http\Request\Poller
+                //Class Http\Request\Poller
+                Poller: function(/*Settings*/params, /*[Object]*/paramsOverride) {
                     Carpenter.Framework.Http.Request.AbstractRequest.call(this, params);
                     this.getRequest().timeout = params.timeout || 20000;
                 },
+                //Class Http\Request\Request
                 Request: function(/*Settings*/params, /*[Object]*/paramsOverride) {//Class Http\Request\Request
                     Carpenter.Framework.Http.Request.AbstractRequest.call(this, params);
                 },
-                WebService: function(/*Settings*/params, /*[Object]*/paramsOverride) {//Class Http\Request\WebService
+                //Class Http\Request\WebService
+                WebService: function(/*Settings*/params, /*[Object]*/paramsOverride) {
                     Carpenter.Framework.Http.Request.AbstractRequest.call(this, params);
 
                     //paramsOverride viendra surcharger params
@@ -809,7 +692,7 @@ var Carpenter = {
                     request.setRequestHeader('Connection', 'close');
 
                 },
-                treatAnswer: function(/*String*/dataType, /*Misc*/answer) {
+                treatAnswer: function(/*String*/dataType, /*mixed*/answer) {
                     var dataReturned;
                     switch(dataType) {
                         case 'text':
@@ -821,54 +704,59 @@ var Carpenter = {
                 }
             }
         },
+        //Namespace Security
         Security: {
+            //Namespace Security\Encryption
             Encryption: {
             },
+            //Namespace Security\Sanitizer
             Sanitizer: {
             },
+            //Namespace Security\Validation
             Validation: {
             }
         },
+        //Namespace Structure
         Structure: {
+            //Namespace Structure\Application
             Application: {
-                AbstractApplication: function(/*Object*/settings, /*PluginManager*/globalPlugins) {
-                    var protected = {settings: settings, plugins: globalPlugins};
+                //Abstract class Structure\Application\AbstractApplication
+                AbstractApplication: function(/*Object*/settings, /*[Object]*/globalClasses, /*[PluginManager]*/globalPlugins) {
+                    var defaultDirs = {
+                            controllers: 'controllers', dependencies: 'dependencies',
+                            models: 'models', plugins: 'plugins', views: 'views'
+                    };
+                    settings.dirs = !settings.dirs ? defaultDirs : Carpenter.merge(defaultDirs, settings.dirs);
+                    var protected = {settings: settings, classes: globalClasses, plugins: globalPlugins};
                     this.getSettings = function() {
                         return protected.settings;
                     };
-                    
+
                     this.getPlugins = function() {
                         return protected.plugins;
                     };
+                    
+                    this.getClasses = function() {
+                       return protected.classes; 
+                    };
                 },
+                //Structure\Application\AbstractApplication methods
                 PrototypeApplication: {
                 },
-                Application: function(/*Object*/settings, /*PluginManager*/globalPlugins) {
+                //Class Structure\Application\Application
+                Application: function(/*Object*/settings, /*[Object]*/globalClasses, /*[PluginManager]*/globalPlugins) {
                     Carpenter.Framework.Structure.Application.AbstractApplication.apply(this, arguments);
                 }
             },
-            Component: {
-                AbstractComponent: function() {
-                    /*
-                     * Les éléments créés via Component possèdent une "référence" 
-                     * 
-                     */
-                }, 
-                PrototypeComponent: {
-                    create: function() {
-                        
-                    }
-                },
-                Component: function() {
-                    
-                }
-            },
-            Module: {
-                AbstractModule: function(/*Function*/body, /*[PluginManager]*/localPlugins) {
+            //Namespace Structure\Controller
+            Controller: {
+                //Abstract class Structure\Controller\AbstractController
+                AbstractController: function(/*Function*/body, /*[PluginManager]*/localPlugins) {
                     this.pluginManager = localPlugins;
                     this.body = body;
                 },
-                PrototypeModule: {
+                //Structure\Controller\AbstractController methods
+                PrototypeController: {
                     onInit: function() {
                         this.state = 'initialized';
                     },
@@ -876,8 +764,9 @@ var Carpenter = {
                         this.state = 'finished';
                     }
                 },
-                Module: function(/*Function*/body, /*[PluginManager]*/localPlugins, /*[Function]*/onInitOver, /*[Function]*/onFinishOver) {
-                    Carpenter.Framework.Structure.Module.AbstractModule.apply(this, arguments);
+                //Class Structure\Controller\Controller
+                Controller: function(/*Function*/body, /*[PluginManager]*/localPlugins, /*[Function]*/onInitOver, /*[Function]*/onFinishOver) {
+                    Carpenter.Framework.Structure.Controller.AbstractController.apply(this, arguments);
 
                     if('function' === typeof (onInitOver))
                         this.onInit = onInitOver;
@@ -885,7 +774,9 @@ var Carpenter = {
                         this.onFinish = onFinishOver;
                 }
             },
+            //Namespace Structure\Router
             Router: {
+                //Static class Structure\Router\Router
                 Router: {
                     handle: function(/*Application*/application) {//Static method
                         var routes = [//TODO : replace by "getRoutes"
@@ -901,29 +792,29 @@ var Carpenter = {
                                     action: 'logout'
                                 }
                             }
-                        ];
-                        function call(module, action, params) {
-                            module.onInit();
-                            if(module.pluginManager)
-                                module.pluginManager.load();
-                            module.body()[action].apply(module, params);
-                            module.onFinish();
+                        ], settings = application.getSettings(), url = document.createElement('a'), request = [];
+                        url.href = document.location;
+                        
+                        function call(controller, action, params) {
+                            controller.onInit();
+                            controller.body()[action].apply(controller, params);
+                            controller.onFinish();
                         }
 
-                        function load(application, module, onLoad) {
-                            var script = document.createElement('script');
-                            script.onload = onLoad;
-                            script.onerror = function() {
-                                throw new Error('Module "' + module + '" could not be loaded');
-                            };
-                            script.type = 'text/javascript';
-                            script.src = 'modules/' + module + '.js';
-                            document.getElementsByTagName('body')[0].appendChild(script);
+                        function load(/*Controller*/controller, /*String*/path) {
+                            var xhrObj = new XMLHttpRequest();
+                            xhrObj.open('GET', path + '/' + controller + '.js', false);
+                            try {
+                                xhrObj.send('');
+                            } catch(exception) {
+                                throw new Error('Controller "' + controller + '" not found in "controllers" dir.');
+                            }
+                            return xhrObj.responseText;
                         }
 
                         function matchRoutes(splittedPath) {
                             var defaultRoute = {
-                                module: 'Main',
+                                controller: 'Main',
                                 action: 'main',
                                 params: []
                             }, i;
@@ -935,22 +826,18 @@ var Carpenter = {
                              else
                              return defaultRoute;
                              }*/
-                            return {module: 'module1', action: 'action1'};
+                            return {controller: 'controller1', action: 'action1'};
                         }
 
                         function parseRewrite() {
-
                             var domains = url.hostname.split('.'), domain = {
                                 sub: domains[0],
                                 sld: domains[1],
                                 tld: domains[2]
                             };
-
                         }
 
-                        var url = document.createElement('a'), request = [];
-                        url.href = document.location;
-                        switch(application.getSettings().type) {
+                        switch(settings.type) {
                             case 'rewrite':
                                 request = url.pathname.split('/');
                                 break;
@@ -959,104 +846,30 @@ var Carpenter = {
                                 break;
                             case 'default':
                             default:
-                                //TODO : récupérer les combinaisons key=value pour définir quel est le module et quelle l'action depuis l'URL
+                                //TODO : récupérer les combinaisons key=value pour définir quel est le controller et quelle l'action depuis l'URL
                                 request = url.search.match(/\??&?([\w]*)=([^&#]*)/g);
                                 break;
                         }
 
                         var splitPathname = matchRoutes(request), applicationPlugins = application.getPlugins();
-                        
+
                         if(applicationPlugins)
-                            applicationPlugins.load();
-
-                        Module = Carpenter.use('Module');
-                        load(application, splitPathname.module, function() {
-                            call(application[splitPathname.module], splitPathname.action, splitPathname.params);
-                            delete Module;
-                            delete PluginManager;
-                        });
+                            applicationPlugins.load(settings.dirs.plugins);//Combine loader
+                        Carpenter.fetchDependencies(settings.dirs.dependencies);//Combine loader
+                        var Controller = Carpenter.use('Controller'), PluginManager = Carpenter.use('PluginManager'),
+                            globalClass, classes = application.getClasses();
+                        
+                        for(globalClass in classes)//Load after plugins and dependencies are done
+                            window[classes[globalClass]] = Carpenter.use(globalClass);
+                        
+                            
+                        eval(load(splitPathname.controller, settings.dirs.controllers));
+                        if(application[splitPathname.controller].pluginManager)
+                            application[splitPathname.controller].pluginManager.load(settings.dirs.plugins);
+                        call(application[splitPathname.controller], splitPathname.action, splitPathname.params);
                     }
                 }
             }
-        },
-        Template: {
-            Skin: {//TODO
-                SkeletonParser: {
-                    attributesAsString: function() {
-                        var aliases = Object.keys(Carpenter.Framework.Template.Skin.private.attributeAlias), countAliases = aliases.length, string = '', i;
-                        for(i = 0; i < countAliases; ++i)
-                            string += '\\' + aliases[i];
-                        return string;
-                    },
-                    
-                    getAttributeAlias: function(attribute) {
-                        return Carpenter.Framework.Template.Skin.private.attributeAlias[attribute] ? Carpenter.Framework.Template.Skin.private.attributeAlias[attribute] : attribute;
-                    },
-                    
-                    parseLines: function(/*Array*/inputs) {
-                        var i, structure;
-                        for (i = 0; i < inputs.length; ++i) { //Parcours des lignes
-                            structure[i] = new Carpenter.Framework.Template.Skin.SkinElement(inputs[i]);
-                            for(j = structure.length; j > 0; --j)
-                                if (structure[j].level < structure[i].level) {
-                                    structure[i].parent = j;
-
-
-                                    if(!structure[i].toParse)
-                                        structure[i].tag = 'PLAINTEXT';
-                                    if('PLAINTEXT' === structure[i].tag)
-                                        structure[i].toParse = false;
-                                    break;
-                                }
-                        }
-                        return structure;
-                    },
-
-                    parseTag: function(input) {
-                        return input.split(' ')[0].toLowerCase();
-                    },
-
-                    parseAttributes: function(input) {
-                        var attributes = input.match(Carpenter.Framework.Template.Skin.private.PARSE_ATTR), 
-                            shortHandAttributes = input.match(Carpenter.Framework.Template.Skin.private.PARSE_ATTR_SHORT), i;
-                        log(attributes)
-                        for (i = 0; i < attributes[1].length; ++i)
-                            attributes[1][i] = Carpenter.Framework.Template.Skin.SkeletonParser.getAttributeAlias(attributes[1][i]);
-                    },
-
-                    parseContent: function(content) {
-                        var inputs = content.replace(/\r\n/, /\n/).split(/\n/);
-                        Carpenter.Framework.Template.Skin.SkeletonParser.parseLines(inputs);
-                    }
-                },
-                SkinElement: function(input) {
-                    //Parser la ligne (tag et attributs) et retourner un selecteur unique (tag[skin-id="X"]) et lui rattacher ses attributs
-                    this.tag = Carpenter.Framework.Template.Skin.SkeletonParser.parseTag(input);
-                    this.attributes = Carpenter.Framework.Template.Skin.SkeletonParser.parseAttributes(input);
-                    
-                    this.element = new Carpenter.Framework.Interact.Element.Element(this.tag, true);
-                    this.attributes.forEach(function() {
-                        this.element.setAttributes();//TODO
-                    });
-                },
-                SkinTranslator: function() {
-                    
-                },
-                private: {
-                            PARSE_ATTR: /([\w]*|[\.\#\?\:\§\%])\(([\w\-;{|}=>\.^ ]*?)\)/g,
-                            PARSE_ATTR_SHORT: /([\.\#\?\:\§\%])([\w\-;{|}=>.]+)/g,
-                            attributeAlias: {
-                                '.': 'class', '#': 'id',
-                                '?': 'skif', '%': 'skloop', '§': 'sksample',
-                                ':': 'skelse'
-                            }
-                        },
-                parse: function() {
-                    
-                }
-            }
-        },
-        Translator: {
         }
     }
 };
